@@ -13,8 +13,10 @@ import pino from 'pino'
 import { fileURLToPath } from 'url'
 let pastebin = new PastebinAPI('EMWTMkQAVfJa9kM-MRUrxd5Oku1U7pgL')
 let sock;
+import multer from 'multer';
 const app = express()
 
+const upload = multer({ dest: './uploads' })
 app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
 
