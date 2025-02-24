@@ -49,6 +49,39 @@ if (fs.existsSync(sessionFolder)) {
     console.error('Error deleting the "SESSION" folder:', err)
   }
 }
+async function initializeSocket() {
+  if (!fs.existsSync(sessionFolder)) {
+    fs.mkdirSync(sessionFolder, { recursive: true });
+  }
+
+  const { state, saveCreds } = await useMultiFileAuthState(sessionFolder);
+
+  sock = Baileys.makeWASocket({
+    printQRInTerminal: false,
+    logger: pino({ level: 'silent' }),
+    browser: ['Ubuntu', 'Chrome', '20.0.04'],
+    auth: state,
+  });
+
+  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect } = update;
+    if (connection === 'close') {
+      const reason = new Boom(lastDisconnect?.error)?.output.statusCode;
+      if (reason === DisconnectReason.loggedOut || reason === DisconnectReason.badSession) {
+        console.log('Session invalidated.');
+        fs.rmdirSync(sessionFolder, { recursive: true });
+      }
+      // Automatically restart the socket
+      initializeSocket();
+    }
+  });
+
+  sock.ev.on('messages.upsert', () => {});
+}
+
+// Call this function when your server starts
+initializeSocket();
 
 let clearState = () => {
   fs.rmdirSync(sessionFolder, { recursive: true })
@@ -223,6 +256,7 @@ async function startSock(phone) {
   })
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, async() => {
   console.log(`API Running on PORT:${PORT}`)
+  await initializeSocket()
 })
