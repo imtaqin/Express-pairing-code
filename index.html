@@ -1,112 +1,120 @@
-<html>
-
+<!DOCTYPE html>
+<html lang="en">
 <head>
-    <style>
-        html,
-        body {
-            margin: 0;
-            padding: 0;
-            width: 100%;
-            height: 100vh;
-            display: flex;
-            flex-direction: column; 
-            justify-content: center;
-            align-items: center;
-            background: #000;
-        }
-
-        .button-container {
-            margin-bottom: 20px; 
-        }
-
-        .glow-on-hover {
-            width: 220px;
-            font-family: 'Roboto', sans-serif;
-            font-size: 26px;
-            font-weight: 600;
-            height: 50px;
-            border: none;
-            outline: none;
-            color: #fff;
-            background: #111;
-            cursor: pointer;
-            position: relative;
-            z-index: 0;
-            border-radius: 10px;
-        }
-
-        .glow-on-hover:before {
-            content: '';
-            background: linear-gradient(45deg, #ff0000, #ff7300, #fffb00, #48ff00, #00ffd5, #002bff, #7a00ff, #ff00c8, #ff0000);
-            position: absolute;
-            top: -2px;
-            left: -2px;
-            background-size: 400%;
-            z-index: -1;
-            filter: blur(5px);
-            width: calc(100% + 4px);
-            height: calc(100% + 4px);
-            animation: glowing 10s linear infinite;
-            opacity: 0;
-            transition: opacity .3s ease-in-out;
-            border-radius: 10px;
-        }
-
-        .glow-on-hover:active {
-            color: #000;
-        }
-
-        .glow-on-hover:active:after {
-            background: transparent;
-        }
-
-        .glow-on-hover:before {
-            opacity: 1;
-        }
-
-        .glow-on-hover:after {
-            z-index: -1;
-            content: '';
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            background: #111;
-            left: 0;
-            top: 0;
-            border-radius: 10px;
-        }
-
-        @keyframes glowing {
-            0% {
-                background-position: 0 0;
-            }
-
-            50% {
-                background-position: 400% 0;
-            }
-
-            100% {
-                background-position: 0 0;
-            }
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>GURU BOT PAIRING</title>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <style>
+    body {
+      background-color: #f8f9fa;
+      font-family: 'Helvetica', sans-serif;
+      padding-top: 30px;
+    }
+    .panel {
+      max-width: 400px;
+      margin: auto;
+      border-radius: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,.1);
+    }
+    .panel-heading {
+      background-color: #128c7e;
+      color: #fff;
+      border-radius: 0;
+    }
+    .form-control {
+      border-radius: 0;
+      height: 40px;
+      box-shadow: none;
+    }
+    .btn-custom {
+      border-radius: 0;
+      background-color: #128c7e;
+      color: #fff;
+      height: 40px;
+      font-weight: bold;
+    }
+    .btn-custom:hover {
+      background-color: #0f776b;
+    }
+    #pair {
+      margin-top: 15px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
 </head>
-
 <body>
-    
-    <div class="button-container">
-        <button class="glow-on-hover" type="button" onclick="window.location.href='/qr'">Via Qr</button>
+<div class="container">
+  <div class="panel panel-default">
+    <div class="panel-heading text-center">
+      <h3 class="panel-title">GURU BOT PAIRING</h3>
     </div>
-    <br>
-    <br>
-    <br>
-    <div class="button-container">
-        <button class="glow-on-hover" type="button" onclick="window.location.href='/code'">Via Code</button>
+    <div class="panel-body">
+      <form>
+        <div class="input-group">
+          <span class="input-group-addon"><i class="fa fa-phone"></i></span>
+          <input type="tel" class="form-control" id="number" placeholder="Enter phone with country code">
+        </div>
+        <button id="submit" class="btn btn-custom btn-block" style="margin-top:15px;">Submit</button>
+        <div id="pair" class="text-center"></div>
+      </form>
     </div>
-    
-    <link rel="import" href="./loader.html">
+  </div>
+</div>
 
-    
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.0.0-alpha.1/axios.min.js"></script>
+
+<script>
+let isSubmitting = false, isCodeDisplayed = false;
+
+$('#submit').on('click', async (e) => {
+  e.preventDefault();
+  let num = $('#number').val().replace(/\D/g, '');
+
+  if (isCodeDisplayed) {
+    alert('Wait 2 minutes before requesting again.');
+    return;
+  }
+
+  if (isSubmitting) {
+    alert('Still processing your previous request.');
+    return;
+  }
+
+  if (!num || num.length < 11) {
+    $('#pair').html('<span class="text-danger">Invalid phone number.</span>');
+    return;
+  }
+
+  isSubmitting = true;
+  $('#pair').html('<span class="text-muted">Please wait...</span>');
+
+  try {
+    let { data } = await axios(`/pair?phone=${num}`);
+    let code = data.code || 'Service Unavailable';
+    $('#pair').html(`
+      <span id="copy">CODE: <strong>${code}</strong></span>
+    `);
+    isCodeDisplayed = true;
+    setTimeout(() => isCodeDisplayed = false, 120000);
+  } catch (err) {
+    $('#pair').html('<span class="text-danger">Error retrieving code.</span>');
+  } finally {
+    isSubmitting = false;
+  }
+});
+
+$(document).on('click', '#copy', async function() {
+  let codeText = $(this).text().replace('CODE: ', '').trim();
+  await navigator.clipboard.writeText(codeText);
+  let original = $(this).html();
+  $(this).html('<strong class="text-success">COPIED!</strong>');
+  setTimeout(() => $(this).html(original), 1000);
+});
+</script>
+
 </body>
-
 </html>
