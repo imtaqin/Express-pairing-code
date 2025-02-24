@@ -1,8 +1,8 @@
 import { Boom } from '@hapi/boom'
 import Baileys, {
   DisconnectReason,
-  useMultiFileAuthState,
-  delay
+  delay,
+  useMultiFileAuthState
 } from '@whiskeysockets/baileys'
 import cors from 'cors'
 import express from 'express'
@@ -11,132 +11,203 @@ import PastebinAPI from 'pastebin-js'
 import path, { dirname } from 'path'
 import pino from 'pino'
 import { fileURLToPath } from 'url'
-import multer from 'multer'
+let pastebin = new PastebinAPI('EMWTMkQAVfJa9kM-MRUrxd5Oku1U7pgL')
 
-const pastebin = new PastebinAPI('EMWTMkQAVfJa9kM-MRUrxd5Oku1U7pgL')
 const app = express()
 
-app.use(cors())
-app.use(express.static('public'))
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate')
 
-const PORT = process.env.PORT || 8000
+  res.setHeader('Pragma', 'no-cache')
+
+  res.setHeader('Expires', '0')
+  next()
+})
+
+app.use(cors())
+let PORT = process.env.PORT || 8000
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const storage = multer.diskStorage({
-  destination: 'public/uploads/',
-  filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname)
+function createRandomId() {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let id = ''
+  for (let i = 0; i < 10; i++) {
+    id += characters.charAt(Math.floor(Math.random() * characters.length))
   }
-})
-const upload = multer({ storage })
-
-const sessionFolder = './auth/session'
-
-async function startBaileys(phone) {
-  if (!fs.existsSync(sessionFolder)) {
-    fs.mkdirSync(sessionFolder, { recursive: true })
-  }
-
-  const { state, saveCreds } = await useMultiFileAuthState(sessionFolder)
-
-  const sock = Baileys.makeWASocket({
-    auth: state,
-    logger: pino({ level: 'silent' }),
-    browser: ['Ubuntu', 'Chrome', '20.0.04']
-  })
-
-  sock.ev.on('creds.update', saveCreds)
-
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
-    if (connection === 'open') {
-      console.log('✅ WhatsApp Connected!')
-      const pasteUrl = await pastebin.createPasteFromFile(
-        `${sessionFolder}/creds.json`,
-        'Guru Session',
-        null,
-        1,
-        'N'
-      )
-      console.log('Pastebin Session:', pasteUrl)
-    }
-
-    if (connection === 'close') {
-      const reason = new Boom(lastDisconnect?.error)?.output.statusCode
-      console.log('Connection closed:', reason)
-      if (reason === DisconnectReason.loggedOut) {
-        fs.rmSync(sessionFolder, { recursive: true })
-        console.log('Logged out. Session deleted.')
-      } else {
-        await delay(5000)
-        startBaileys(phone)
-      }
-    }
-  })
-
-  return sock
+  return id
 }
 
-// Initial load session (if exists)
-let sock
+let sessionFolder = `./auth/${createRandomId()}`
 if (fs.existsSync(sessionFolder)) {
-  sock = await startBaileys()
+  try {
+    fs.rmdirSync(sessionFolder, { recursive: true })
+    console.log('Deleted the "SESSION" folder.')
+  } catch (err) {
+    console.error('Error deleting the "SESSION" folder:', err)
+  }
 }
 
-app.get('/', (req, res) => {
+let clearState = () => {
+  fs.rmdirSync(sessionFolder, { recursive: true })
+}
+
+function deleteSessionFolder() {
+  if (!fs.existsSync(sessionFolder)) {
+    console.log('The "SESSION" folder does not exist.')
+    return
+  }
+
+  try {
+    fs.rmdirSync(sessionFolder, { recursive: true })
+    console.log('Deleted the "SESSION" folder.')
+  } catch (err) {
+    console.error('Error deleting the "SESSION" folder:', err)
+  }
+}
+
+app.get('/', async (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'))
 })
 
-// Request pairing code
+app.get('/qr', async (req, res) => {
+  res.sendFile(path.join(__dirname, 'qr.html'))
+})
+
+app.get('/code', async (req, res) => {
+  res.sendFile(path.join(__dirname, 'pair.html'))
+})
+
 app.get('/pair', async (req, res) => {
-  const phone = req.query.phone?.replace(/\D/g, '')
+  let phone = req.query.phone
 
-  if (!phone || phone.length < 11) {
-    return res.status(400).json({ error: 'Invalid phone number' })
+  if (!phone) return res.json({ error: 'Please Provide Phone Number' })
+
+  try {
+    const code = await startnigg(phone)
+    res.json({ code: code })
+  } catch (error) {
+    console.error('Error in WhatsApp authentication:', error)
+    res.status(500).json({ error: 'Internal Server Error' })
   }
+})
 
-  if (!sock || !sock.authState.creds.registered) {
-    sock = await startBaileys(phone)
+async function startnigg(phone) {
+  return new Promise(async (resolve, reject) => {
     try {
-      const code = await sock.requestPairingCode(phone)
-      res.json({ code })
-    } catch (e) {
-      res.status(500).json({ error: 'Failed to generate code' })
-    }
-  } else {
-    res.status(200).json({ message: 'Already paired' })
-  }
-})
-
-// 📥 Send Message from TXT upload
-app.post('/send', upload.single('file'), async (req, res) => {
-  if (!sock) {
-    return res.status(400).send('WhatsApp is not connected yet.')
-  }
-
-  const fileContent = fs.readFileSync(req.file.path, 'utf-8').trim()
-  const lines = fileContent.split('\n')
-
-  const results = []
-  for (let line of lines) {
-    const [num, msg] = line.split('|')
-    if (num && msg) {
-      try {
-        await sock.sendMessage(`${num}@s.whatsapp.net`, { text: msg })
-        results.push({ num, status: '✅ Sent' })
-      } catch (e) {
-        results.push({ num, status: '❌ Failed', error: e.message })
+      if (!fs.existsSync(sessionFolder)) {
+        fs.mkdirSync(sessionFolder)
       }
-      await delay(1500)
-    } else {
-      results.push({ line, status: '❌ Invalid format' })
-    }
-  }
 
-  fs.unlinkSync(req.file.path)
-  res.json(results)
-})
+      const { state, saveCreds } = await useMultiFileAuthState(sessionFolder)
+
+      const negga = Baileys.makeWASocket({
+        printQRInTerminal: false,
+        logger: pino({
+          level: 'silent',
+        }),
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
+        auth: state,
+      })
+
+      if (!negga.authState.creds.registered) {
+        let phoneNumber = phone ? phone.replace(/[^0-9]/g, '') : ''
+        if (phoneNumber.length < 11) {
+          return reject(new Error('Please Enter Your Number With Country Code !!'))
+        }
+        setTimeout(async () => {
+          try {
+            let code = await negga.requestPairingCode(phoneNumber)
+            console.log(`Your Pairing Code : ${code}`)
+            resolve(code)
+          } catch (requestPairingCodeError) {
+            const errorMessage = 'Error requesting pairing code from WhatsApp'
+            console.error(errorMessage, requestPairingCodeError)
+            return reject(new Error(errorMessage))
+          }
+        }, 2000)
+      }
+
+      negga.ev.on('creds.update', saveCreds)
+
+      negga.ev.on('connection.update', async update => {
+        const { connection, lastDisconnect } = update
+
+        if (connection === 'open') {
+          await delay(10000)
+
+          const output = await pastebin.createPasteFromFile(
+            `${sessionFolder}/creds.json`,
+            'Guru Bhai',
+            null,
+            1,
+            'N'
+          )
+          const sessi = 'GuruBot~' + output.split('https://pastebin.com/')[1]
+          console.log(sessi)
+          await delay(2000)
+          let guru = await negga.sendMessage(negga.user.id, { text: sessi })
+          await delay(2000)
+          await negga.sendMessage(
+            negga.user.id,
+            {
+              text: 'Hello there! 👋 \n\nDo not share your session id with anyone.\n\nPut the above in SESSION_ID var\n\nThanks for using GURU-BOT\n\n join support group:- https://chat.whatsapp.com/JY4R2D22pbLIKBMQWyBaLg \n',
+            },
+            { quoted: guru }
+          )
+
+          console.log('Connected to WhatsApp Servers')
+
+          try {
+            deleteSessionFolder()
+          } catch (error) {
+            console.error('Error deleting session folder:', error)
+          }
+
+          process.send('reset')
+        }
+
+        if (connection === 'close') {
+          let reason = new Boom(lastDisconnect?.error)?.output.statusCode
+          if (reason === DisconnectReason.connectionClosed) {
+            console.log('[Connection closed, reconnecting....!]')
+            process.send('reset')
+          } else if (reason === DisconnectReason.connectionLost) {
+            console.log('[Connection Lost from Server, reconnecting....!]')
+            process.send('reset')
+          } else if (reason === DisconnectReason.loggedOut) {
+            clearState()
+            console.log('[Device Logged Out, Please Try to Login Again....!]')
+            clearState()
+            process.send('reset')
+          } else if (reason === DisconnectReason.restartRequired) {
+            console.log('[Server Restarting....!]')
+            startnigg()
+          } else if (reason === DisconnectReason.timedOut) {
+            console.log('[Connection Timed Out, Trying to Reconnect....!]')
+            process.send('reset')
+          } else if (reason === DisconnectReason.badSession) {
+            console.log('[BadSession exists, Trying to Reconnect....!]')
+            clearState()
+            process.send('reset')
+          } else if (reason === DisconnectReason.connectionReplaced) {
+            console.log(`[Connection Replaced, Trying to Reconnect....!]`)
+            process.send('reset')
+          } else {
+            console.log('[Server Disconnected: Maybe Your WhatsApp Account got Fucked....!]')
+            process.send('reset')
+          }
+        }
+      })
+
+      negga.ev.on('messages.upsert', () => {})
+    } catch (error) {
+      console.error('An Error Occurred:', error)
+      throw new Error('An Error Occurred')
+    }
+  })
+}
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`)
+  console.log(`API Running on PORT:${PORT}`)
 })
