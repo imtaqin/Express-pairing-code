@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WhatsApp Bulk Message</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@3.4.1/dist/css/bootstrap.min.css">
+</head>
+<body class="container">
+  <h3 class="text-center">WhatsApp Bulk Sender</h3>
+  <form id="sendForm">
+    <div class="form-group">
+      <label>Upload TXT (number|message per line)</label>
+      <input type="file" class="form-control" name="file" accept=".txt" required>
+    </div>
+    <button class="btn btn-success">Send Messages</button>
+  </form>
+  <pre id="output" class="well" style="margin-top:15px;"></pre>
+
+<script>
+document.getElementById('sendForm').onsubmit = async (e) => {
+  e.preventDefault()
+  const formData = new FormData(e.target)
+  const res = await fetch('/send', { method: 'POST', body: formData })
+  const results = await res.json()
+  document.getElementById('output').textContent = results.map(r => `${r.num || r.line}: ${r.status}`).join('\n')
+}
+</script>
+</body>
+</html>

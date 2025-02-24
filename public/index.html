@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>GURU BOT PAIRING</title>
+  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+  <style>
+    body {
+      background-color: #f8f9fa;
+      font-family: 'Helvetica', sans-serif;
+      padding-top: 30px;
+    }
+    .panel {
+      max-width: 400px;
+      margin: auto;
+      border-radius: 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,.1);
+    }
+    .panel-heading {
+      background-color: #128c7e;
+      color: #fff;
+      border-radius: 0;
+    }
+    .form-control {
+      border-radius: 0;
+      height: 40px;
+      box-shadow: none;
+    }
+    .btn-custom {
+      border-radius: 0;
+      background-color: #128c7e;
+      color: #fff;
+      height: 40px;
+      font-weight: bold;
+    }
+    .btn-custom:hover {
+      background-color: #0f776b;
+    }
+    #pair {
+      margin-top: 15px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="panel panel-default">
+    <div class="panel-heading text-center">
+      <h3 class="panel-title">PAIR CODE</h3>
+    </div>
+    <div class="panel-body">
+      <form>
+        <div class="input-group">
+          <span class="input-group-addon"><i class="fa fa-phone"></i></span>
+          <input type="tel" class="form-control" id="number" placeholder="Enter phone with country code">
+        </div>
+        <button id="submit" class="btn btn-custom btn-block" style="margin-top:15px;">Submit</button>
+        <div id="pair" class="text-center"></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.0.0-alpha.1/axios.min.js"></script>
+
+<script>
+let isSubmitting = false, isCodeDisplayed = false;
+
+$('#submit').on('click', async (e) => {
+  e.preventDefault();
+  let num = $('#number').val().replace(/\D/g, '');
+
+  if (isCodeDisplayed) {
+    alert('Wait 2 minutes before requesting again.');
+    return;
+  }
+
+  if (isSubmitting) {
+    alert('Still processing your previous request.');
+    return;
+  }
+
+  if (!num || num.length < 11) {
+    $('#pair').html('<span class="text-danger">Invalid phone number.</span>');
+    return;
+  }
+
+  isSubmitting = true;
+  $('#pair').html('<span class="text-muted">Please wait...</span>');
+
+  try {
+    let { data } = await axios(`/pair?phone=${num}`);
+    let code = data.code || 'Service Unavailable';
+    $('#pair').html(`
+      <span id="copy">CODE: <strong>${code}</strong></span>
+    `);
+    isCodeDisplayed = true;
+    setTimeout(() => isCodeDisplayed = false, 120000);
+  } catch (err) {
+    $('#pair').html('<span class="text-danger">Error retrieving code.</span>');
+  } finally {
+    isSubmitting = false;
+  }
+});
+
+$(document).on('click', '#copy', async function() {
+  let codeText = $(this).text().replace('CODE: ', '').trim();
+  await navigator.clipboard.writeText(codeText);
+  let original = $(this).html();
+  $(this).html('<strong class="text-success">COPIED!</strong>');
+  setTimeout(() => $(this).html(original), 1000);
+});
+</script>
+
+</body>
+</html>
